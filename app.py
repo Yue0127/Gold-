@@ -2,62 +2,64 @@ import streamlit as st
 import base64
 from PIL import Image
 import io
+import time
 
 # 页面配置
-st.set_page_config(page_title="晚夜·黄金ETF决策系统 (V7.0双核版)", layout="wide")
+st.set_page_config(page_title="晚夜·黄金ETF决策系统 (V7.1兼容版)", layout="wide")
 
-# 侧边栏：模型选择与 Key
+# 侧边栏
 with st.sidebar:
     st.header("⚙️ 核心设置")
-    
-    # 选择你的模型
-    model_provider = st.radio("选择 AI 引擎:", ["Google Gemini (免费/推荐)", "OpenAI GPT-4o (付费)"])
-    
-    api_key = st.text_input(
-        f"输入 {model_provider.split()[0]} API Key", 
-        type="password",
-        help="Gemini Key 去 aistudio.google.com 免费领；OpenAI Key 去 platform.openai.com"
-    )
-    
-    st.markdown("---")
-    st.info("💡 **提示**：Gemini 1.5 Pro 在看图分析方面非常强，且目前个人使用通常免费。")
+    model_provider = st.radio("选择 AI 引擎:", ["Google Gemini (免费)", "OpenAI GPT-4o (付费)"])
+    api_key = st.text_input(f"输入 {model_provider.split()[0]} API Key", type="password")
+    st.info("💡 如果 Gemini 报错，系统会自动尝试切换不同版本的模型。")
 
-# 主界面
-st.title("黄金 ETF 深度决策系统 (V7.0)")
-st.caption(f"当前引擎: {model_provider} | 融合‘晚夜’战法 + 量化因子")
+st.title("🏛️ 黄金 ETF 深度决策系统 (V7.1 自动纠错版)")
+st.caption(f"当前引擎: {model_provider} | 自动适配模型版本")
 
 col1, col2 = st.columns([1.5, 1])
 
-# ----------------- 核心 AI 逻辑 -----------------
+# ----------------- 核心逻辑 -----------------
 
-def analyze_with_gemini(image_bytes, key, prompt):
+def analyze_with_gemini_auto(image_bytes, key, prompt):
     import google.generativeai as genai
     
-    # 配置 Key
     genai.configure(api_key=key)
-    # 使用 Gemini 1.5 Pro (视觉能力最强)
-    model = genai.GenerativeModel('gemini-1.5-flash')
     
-    # 处理图片
+    # 备选模型列表（AI 会挨个尝试，直到成功）
+    candidate_models = [
+        "gemini-1.5-flash",          # 最新标准名
+        "gemini-1.5-flash-latest",   # 别名1
+        "gemini-1.5-flash-001",      # 特定版本号
+        "gemini-1.5-pro",            # 备用：Pro版本
+    ]
+    
     image = Image.open(io.BytesIO(image_bytes))
-    
-    try:
-        response = model.generate_content([prompt, image])
-        return response.text
-    except Exception as e:
-        return f"❌ Gemini 连接失败: {str(e)}"
+    last_error = ""
+
+    # 循环尝试
+    for model_name in candidate_models:
+        try:
+            # 创建模型对象
+            model = genai.GenerativeModel(model_name)
+            # 尝试生成
+            response = model.generate_content([prompt, image])
+            return f"✅ 成功连接模型: **{model_name}**\n\n" + response.text
+        except Exception as e:
+            last_error = str(e)
+            continue # 如果失败，尝试列表里的下一个
+            
+    return f"❌ 所有模型尝试均失败。可能是 Key 无效或区域受限。\n最后一次报错: {last_error}"
 
 def analyze_with_openai(image_bytes, key, prompt):
     from openai import OpenAI
-    
     client = OpenAI(api_key=key)
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
-    
     try:
         response = client.chat.completions.create(
             model="gpt-4o", 
             messages=[
-                {"role": "system", "content": "你是一个专业的黄金分析师。"},
+                {"role": "system", "content": "你是一个黄金交易分析师。"},
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
@@ -69,7 +71,7 @@ def analyze_with_openai(image_bytes, key, prompt):
     except Exception as e:
         return f"❌ OpenAI 连接失败: {str(e)}"
 
-# 通用提示词 (V6.0 的逻辑)
+# 提示词
 system_prompt = """
 请扮演一位结合了“晚夜博主”趋势战法与“华尔街量化”因子的黄金分析师。
 针对用户的 ETF (无杠杆) 交易需求，分析这张 K 线图。
@@ -91,7 +93,7 @@ system_prompt = """
 请用清晰的 Markdown 格式输出，包含【👁️ 盲区扫描】、【📐 关键点位】和【🛡️ 操作策略】。
 """
 
-# ----------------- 运行逻辑 -----------------
+# ----------------- 界面交互 -----------------
 if api_key:
     with col1:
         uploaded_file = st.file_uploader("📤 上传 K 线图", type=["jpg", "png", "jpeg"])
@@ -101,18 +103,16 @@ if api_key:
     with col2:
         if uploaded_file:
             st.subheader("🤖 AI 分析报告")
-            
-            # 读取图片数据
             img_bytes = uploaded_file.getvalue()
             
             if st.button("开始深度扫描", type="primary"):
-                with st.spinner("正在进行量化测算与模型推理..."):
+                with st.spinner("正在自动寻找可用的 Gemini 模型..."):
                     if "Gemini" in model_provider:
-                        result = analyze_with_gemini(img_bytes, api_key, system_prompt)
+                        result = analyze_with_gemini_auto(img_bytes, api_key, system_prompt)
                     else:
                         result = analyze_with_openai(img_bytes, api_key, system_prompt)
                     
                     st.markdown(result)
                     st.success("分析完成！")
 else:
-    st.info("👈 请在左侧选择 AI 引擎并输入 Key (推荐使用 Gemini 免费版)")
+    st.info("👈 请在左侧选择 AI 引擎并输入 Key")

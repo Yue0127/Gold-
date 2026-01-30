@@ -36,7 +36,7 @@ def analyze_with_gemini(image_bytes, key, prompt):
     # 配置 Key
     genai.configure(api_key=key)
     # 使用 Gemini 1.5 Pro (视觉能力最强)
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
     # 处理图片
     image = Image.open(io.BytesIO(image_bytes))

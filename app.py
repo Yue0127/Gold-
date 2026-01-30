@@ -1,84 +1,65 @@
 import streamlit as st
 import base64
-from openai import OpenAI
+from PIL import Image
+import io
 
-# ----------------- 页面基础配置 -----------------
-st.set_page_config(page_title="晚夜·黄金ETF机构级量化系统 (V6.0)", layout="wide")
+# 页面配置
+st.set_page_config(page_title="晚夜·黄金ETF决策系统 (V7.0双核版)", layout="wide")
 
-# 侧边栏：控制台
+# 侧边栏：模型选择与 Key
 with st.sidebar:
-    st.header("⚙️ 量化中枢")
-    api_key = st.text_input("🔑 OpenAI API Key", type="password")
+    st.header("⚙️ 核心设置")
+    
+    # 选择你的模型
+    model_provider = st.radio("选择 AI 引擎:", ["Google Gemini (免费/推荐)", "OpenAI GPT-4o (付费)"])
+    
+    api_key = st.text_input(
+        f"输入 {model_provider.split()[0]} API Key", 
+        type="password",
+        help="Gemini Key 去 aistudio.google.com 免费领；OpenAI Key 去 platform.openai.com"
+    )
     
     st.markdown("---")
-    st.markdown("### 📊 V6.0 量化增强因子")
-    st.info("已启用机构级数据透视")
-    
-    st.markdown("""
-    **1. 📉 乖离率 (BIAS) 监测：**
-    - 监测价格偏离 MA30 的程度。
-    - **警报**：偏离度 >5% 视为极端超买（风险区）。
-    
-    **2. 💥 波动率 (Bandwidth) 预警：**
-    - 监测布林带开口的挤压程度。
-    - **警报**：带宽 <0.1 意味着即将变盘（暴风雨前的宁静）。
-    
-    **3. 🐂 隐形动量 (RSI Divergence)：**
-    - 识别“价涨量缩”的顶背离。
-    - **作用**：精准识别博主口中的“诱多”陷阱。
-    """)
+    st.info("💡 **提示**：Gemini 1.5 Pro 在看图分析方面非常强，且目前个人使用通常免费。")
 
 # 主界面
-st.title("🏛️ 黄金 ETF 深度决策系统 (V6.0 最终版)")
-st.caption("融合‘晚夜’趋势战法 + 华尔街量化因子 | 专治肉眼盲区")
+st.title("黄金 ETF 深度决策系统 (V7.0)")
+st.caption(f"当前引擎: {model_provider} | 融合‘晚夜’战法 + 量化因子")
 
 col1, col2 = st.columns([1.5, 1])
 
-# ----------------- 核心 AI 分析逻辑 -----------------
-def analyze_image_v6(image_file, key):
+# ----------------- 核心 AI 逻辑 -----------------
+
+def analyze_with_gemini(image_bytes, key, prompt):
+    import google.generativeai as genai
+    
+    # 配置 Key
+    genai.configure(api_key=key)
+    # 使用 Gemini 1.5 Pro (视觉能力最强)
+    model = genai.GenerativeModel('gemini-1.5-pro')
+    
+    # 处理图片
+    image = Image.open(io.BytesIO(image_bytes))
+    
+    try:
+        response = model.generate_content([prompt, image])
+        return response.text
+    except Exception as e:
+        return f"❌ Gemini 连接失败: {str(e)}"
+
+def analyze_with_openai(image_bytes, key, prompt):
+    from openai import OpenAI
+    
     client = OpenAI(api_key=key)
-    base64_image = base64.b64encode(image_file.getvalue()).decode('utf-8')
-
-    system_prompt = """
-    你是一位结合了“传统技术派（晚夜博主）”和“现代量化派（华尔街机构）”的顶级黄金分析师。
-    用户的痛点是：肉眼看不出数据背后的隐患。你需要用量化思维弥补这一缺陷。
-
-    【请按照以下步骤进行深度扫描】：
-
-    ### 第一维度：形态与趋势（晚夜视角）
-    1. **结构定位**：当前是处于“蓝色通道”（急涨）、“紫色通道”（稳涨）还是“破位状态”？
-    2. **画线辅助**：描述支撑位（前低/MA30）和压力位（通道上沿）的具体位置。
-
-    ### 第二维度：量化数据透视（机构视角 - 重点！）
-    请仔细观察图中的 K 线与均线/指标的距离，估算以下因子：
-    1. **乖离率 (Bias Risk)**：
-       - 目测当前价格距离 MA30 有多远？
-       - 判定：如果是**贴着 MA30 涨**，属于“健康趋势”；如果是**垂直拉升远离 MA30**，警告“乖离率过大，随时可能均值回归”。
-    2. **动能背离 (Divergence Check)**：
-       - 观察下方的 MACD 或 RSI（如果有）。
-       - 判定：价格创新高了吗？指标有没有跟着创新高？如果有“顶背离”，明确警告用户：“这是量化模型确认的诱多信号。”
-    3. **波动率压缩 (Squeeze)**：
-       - 观察布林带（BOLL）。口子是张大的还是缩得很紧？
-       - 判定：如果缩得很紧，提示“波动率极低，未来 48 小时内将有大变盘，ETF 请拿稳扶好”。
-
-    ### 第三维度：ETF 交易指令
-    结合上述两点，给出具体的 ETF 操作建议：
-    - **左侧挂单**：建议在什么价格附近挂单接货（通常是 MA30 或 通道下沿）。
-    - **右侧风控**：如果出现什么信号（如跌破生死线 + 量能放大），必须离场？
-
-    【输出格式】：
-    - **👁️ 盲区扫描**：(揭示肉眼容易忽略的量化风险，如“虽然涨了，但动能正在衰竭”)
-    - **📐 关键点位**：(支撑位、压力位、变盘点)
-    - **🛡️ 综合策略**：(买入/持有/减仓)
-    """
-
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    
     try:
         response = client.chat.completions.create(
             model="gpt-4o", 
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": "你是一个专业的黄金分析师。"},
                 {"role": "user", "content": [
-                    {"type": "text", "text": "请用 V6.0 量化模型分析这张图。重点告诉我肉眼容易忽略的风险或机会。"},
+                    {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                 ]}
             ],
@@ -86,40 +67,52 @@ def analyze_image_v6(image_file, key):
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"❌ 量化引擎连接失败: {e}"
+        return f"❌ OpenAI 连接失败: {str(e)}"
 
-# ----------------- 界面交互 -----------------
+# 通用提示词 (V6.0 的逻辑)
+system_prompt = """
+请扮演一位结合了“晚夜博主”趋势战法与“华尔街量化”因子的黄金分析师。
+针对用户的 ETF (无杠杆) 交易需求，分析这张 K 线图。
+
+【重点分析维度】：
+1. **画线定位**：
+   - 识别图中的【通道结构】：是急涨的蓝色通道，还是稳涨的紫色通道？
+   - 找出【支撑位】：前低或 MA30 均线在哪里？
+   
+2. **量化排雷 (肉眼盲区)**：
+   - **乖离率风险**：价格是否偏离 MA30 太远？(暗示回调风险)
+   - **顶背离**：观察 MACD/RSI，是否有“价涨量缩”的诱多迹象？
+   - **布林带**：是否极度收口(变盘前兆)或开口过大(超买)？
+
+3. **操作指令 (ETF专属)**：
+   - 给出明确建议：【买入半仓】、【满仓持有】 还是 【止盈减仓】？
+   - 提醒：如果是 ETF，越跌越补的“万金油”点位在哪里（例如布林下轨）？
+
+请用清晰的 Markdown 格式输出，包含【👁️ 盲区扫描】、【📐 关键点位】和【🛡️ 操作策略】。
+"""
+
+# ----------------- 运行逻辑 -----------------
 if api_key:
     with col1:
-        uploaded_file = st.file_uploader("📤 上传 K 线图 (最好包含 MA, BOLL, MACD 等指标)", type=["jpg", "png", "jpeg"])
+        uploaded_file = st.file_uploader("📤 上传 K 线图", type=["jpg", "png", "jpeg"])
         if uploaded_file:
             st.image(uploaded_file, caption="待分析盘面", use_column_width=True)
-            
-            # 模拟一个量化仪表盘 (增加专业感)
-            st.markdown("#### ⚡ 实时量化扫描中...")
-            my_bar = st.progress(0)
-            import time
-            for percent_complete in range(100):
-                time.sleep(0.01)
-                my_bar.progress(percent_complete + 1)
     
     with col2:
         if uploaded_file:
-            st.subheader("📋 深度量化分析报告")
+            st.subheader("🤖 AI 分析报告")
             
-            result = analyze_image_v6(uploaded_file, api_key)
-            st.markdown(result)
+            # 读取图片数据
+            img_bytes = uploaded_file.getvalue()
             
-            st.info("💡 **小贴士**：ETF 最大的优势是容错率。量化模型提示‘超卖’（Bias过低）时，往往是 ETF 最佳的定投时刻。")
-
+            if st.button("开始深度扫描", type="primary"):
+                with st.spinner("正在进行量化测算与模型推理..."):
+                    if "Gemini" in model_provider:
+                        result = analyze_with_gemini(img_bytes, api_key, system_prompt)
+                    else:
+                        result = analyze_with_openai(img_bytes, api_key, system_prompt)
+                    
+                    st.markdown(result)
+                    st.success("分析完成！")
 else:
-    # 引导页
-    st.info("👈 请在左侧输入 API Key 启动系统")
-    st.markdown("""
-    ### 为什么你需要 V6.0？
-    
-    * **肉眼看图**：觉得涨势很好，满仓冲。
-    * **量化看图**：发现乖离率过大 + MACD 顶背离 = **诱多陷阱，快跑！**
-    
-    这个版本就是为了让你看到这些“隐形”的风险。
-    """)
+    st.info("👈 请在左侧选择 AI 引擎并输入 Key (推荐使用 Gemini 免费版)")
